@@ -86,6 +86,21 @@ def predict():
                 "Start_hour": data["Start_hour"],
                 "End_hour": data["End_hour"]
                 }])
+            day_map = {
+                "Monday": 0,
+            "Tuesday": 1,
+            "Wednesday": 2,
+            "Thursday": 3,
+            "Friday": 4,
+            "Saturday": 5,
+            "Sunday": 6
+            }
+
+            input_df["day_name"] = day_map.get(data["day_name"], -1)
+
+            if input_df["day_name"][0] == -1:
+                return jsonify({"error": "Invalid day_name"})
+
             
             print("RAW INPUT:")
             print(input_df)
