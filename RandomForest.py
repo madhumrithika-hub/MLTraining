@@ -1,72 +1,219 @@
+from flask import Flask, request, jsonify
 import pandas as pd
-import numpy as np
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import pickle
+import os
 
+app = Flask(__name__)
 
-train_df = pd.read_csv("Railway_Delay_Feb_2026.csv")
-test_df = pd.read_csv("Railway_Delay_Mar_2026.csv")
+MODEL_FILE = "model.pkl"
+ENCODER_FILE = "encoders.pkl"
 
-df = pd.concat([train_df, test_df], axis=0)
+model = None
+encoders = {}
 
-df["Date"] = pd.to_datetime(df["Date"])
-
-df = df.sort_values(by=["Date", "train_no", "stop_seq"])
-
-
-def time_to_minutes(t):
+def convert_hour(time_str):
     try:
-        h, m, s = map(int, str(t).split(":"))
-        return h * 60 + m
+        return int(str(time_str).split(":")[0])
     except:
+        print("ERROR in convert_hour with value:", time_str)
         return 0
 
+@app.route("/train", methods=["GET"])
+def train():
+    global model, encoders
 
-for col in ["sched_arr", "actual_arr", "sched_dep", "actual_dep"]:
-    df[col] = df[col].apply(time_to_minutes)
+    df = pd.read_csv("we.csv")
+    df = df.dropna()
 
-station_encoder = LabelEncoder()
-weather_encoder = LabelEncoder()
+    df["Start_hour"] = df["Start_hour"].apply(convert_hour)
+    df["End_hour"] = df["End_hour"].apply(convert_hour)
 
-df["station"] = station_encoder.fit_transform(df["station"])
-df["weather"] = weather_encoder.fit_transform(df["weather"])
+    if data["day_name"] not in encoders["day_name"].classes_:
+        return jsonify({"error": "Invalid day_name"})
 
-pickle.dump(station_encoder, open("station_encoder.pkl", "wb"))
-pickle.dump(weather_encoder, open("weather_encoder.pkl", "wb"))
+    le = LabelEncoder()
+    df["day_name"] = le.fit_transform(df["day_name"])
+    encoders["day_name"] = le
 
-df["prev_arr_delay"] = df.groupby("trip_id")["arr_delay"].shift(1)
-df["prev_arr_delay"] = df["prev_arr_delay"].fillna(0)
+    print(encoders)
+    print(encoders["day_name"].classes_)
 
-train_df = df.iloc[:len(train_df)]
-test_df = df.iloc[len(train_df):]
+    X = df[["date", "month", "year", "day_name", "Start_hour", "End_hour"]]
 
-features = [
-    "train_no",
-    "stop_seq",
-    "station",
-    "distance_from_src",
-    "sched_arr",
-    "sched_dep",
-    "peak_hour",
-    "holiday_flag",
-    "weather",
-    "prev_arr_delay"
-]
+    y = df[["temp", "hum"]]
 
-X_train = train_df[features]
-X_test = test_df[features]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
 
-y_arr_train = train_df["arr_delay"]
-y_dep_train = train_df["dep_delay"]
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
 
-arrival_model = RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42)
-departure_model = RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42)
+    score = model.score(X_test, y_test)
 
-arrival_model.fit(X_train, y_arr_train)
-departure_model.fit(X_train, y_dep_train)
+    pickle.dump(model, open(MODEL_FILE, "wb"))
+    pickle.dump(encoders, open(ENCODER_FILE, "wb"))
 
-pickle.dump(arrival_model, open("arrival_model.pkl", "wb"))
-pickle.dump(departure_model, open("departure_model.pkl", "wb"))
+    return jsonify({
+        "message": "Regression model trained!",
+        "R2_score": round(score, 3)
+    })
 
-print("Models trained successfully!")
+@app.route("/predict", methods=["GET", "POST"])
+def predict():
+    print("NEW CODE IS RUNNING")
+    global model, encoders
+
+    if request.method == "GET":
+        return "Use POST request with JSON data"
+
+    elif request.method == "POST":
+        try:
+            if model is None:
+                model = pickle.load(open("model.pkl", "rb"))
+                encoders = pickle.load(open("encoders.pkl", "rb"))
+                
+            data = request.get_json()
+            
+            input_df = pd.DataFrame([{
+                "date": data["date"],
+                "month": data["month"],
+                "year": data["year"],
+                "day_name": data["day_name"],
+                "Start_hour": data["Start_hour"],
+                "End_hour": data["End_hour"]
+                }])
+            
+            print("RAW INPUT:")
+            print(input_df)
+            
+            input_df["Start_hour"] = input_df["Start_hour"].apply(convert_hour)
+            
+            input_df["End_hour"] = input_df["End_hour"].apply(convert_hour)
+            
+            input_df["day_name"] = encoders["day_name"].transform(input_df["day_name"])
+
+            print(input_df)
+            print(input_df.dtypes)
+            
+            prediction = model.predict(input_df)
+            
+            return jsonify({
+                 "predicted_temperature": round(prediction[0][0], 2),
+                 "predicted_humidity": round(prediction[0][1], 2)
+           })
+        
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+if __name__ == "__main__":
+from flask import Flask, request, jsonify
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+import pickle
+import os
+
+app = Flask(__name__)
+
+MODEL_FILE = "model.pkl"
+ENCODER_FILE = "encoders.pkl"
+
+model = None
+encoders = {}
+
+def convert_hour(time_str):
+    try:
+        return int(str(time_str).split(":")[0])
+    except:
+        print("ERROR in convert_hour with value:", time_str)
+        return 0
+
+@app.route("/train", methods=["GET"])
+def train():
+    global model, encoders
+
+    df = pd.read_csv("we.csv")
+    df = df.dropna()
+
+    df["Start_hour"] = df["Start_hour"].apply(convert_hour)
+    df["End_hour"] = df["End_hour"].apply(convert_hour)
+
+    le = LabelEncoder()
+    df["day_name"] = le.fit_transform(df["day_name"])
+    encoders["day_name"] = le
+
+    X = df[["date", "month", "year", "day_name", "Start_hour", "End_hour"]]
+
+    y = df[["temp", "hum"]]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
+
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    score = model.score(X_test, y_test)
+
+    pickle.dump(model, open(MODEL_FILE, "wb"))
+    pickle.dump(encoders, open(ENCODER_FILE, "wb"))
+
+    return jsonify({
+        "message": "Regression model trained!",
+        "R2_score": round(score, 3)
+    })
+
+@app.route("/predict", methods=["GET", "POST"])
+def predict():
+    print("NEW CODE IS RUNNING")
+    global model, encoders
+
+    if request.method == "GET":
+        return "Use POST request with JSON data"
+
+    elif request.method == "POST":
+        try:
+            if model is None:
+                model = pickle.load(open("model.pkl", "rb"))
+                encoders = pickle.load(open("encoders.pkl", "rb"))
+                
+            data = request.get_json()
+            
+            input_df = pd.DataFrame([{
+                "date": data["date"],
+                "month": data["month"],
+                "year": data["year"],
+                "day_name": data["day_name"],
+                "Start_hour": data["Start_hour"],
+                "End_hour": data["End_hour"]
+                }])
+            
+            print("RAW INPUT:")
+            print(input_df)
+            
+            input_df["Start_hour"] = input_df["Start_hour"].apply(convert_hour)
+            
+            input_df["End_hour"] = input_df["End_hour"].apply(convert_hour)
+            
+            input_df["day_name"] = encoders["day_name"].transform(input_df["day_name"])
+
+            print(input_df)
+            print(input_df.dtypes)
+            
+            prediction = model.predict(input_df)
+            
+            return jsonify({
+                 "predicted_temperature": round(prediction[0][0], 2),
+                 "predicted_humidity": round(prediction[0][1], 2)
+           })
+        
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+if __name__ == "__main__":
+    app.run(debug=True)
