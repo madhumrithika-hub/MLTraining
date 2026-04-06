@@ -29,17 +29,11 @@ def train():
     df = df.dropna()
 
     df["Start_hour"] = df["Start_hour"].apply(convert_hour)
-    df["End_hour"] = df["End_hour"].apply(convert_hour)
-
-    if data["day_name"] not in encoders["day_name"].classes_:
-        return jsonify({"error": "Invalid day_name"})
+    df["End_hour"] = df["End_hour"].apply(convert_hour))
 
     le = LabelEncoder()
     df["day_name"] = le.fit_transform(df["day_name"])
     encoders["day_name"] = le
-
-    print(encoders)
-    print(encoders["day_name"].classes_)
 
     X = df[["date", "month", "year", "day_name", "Start_hour", "End_hour"]]
 
